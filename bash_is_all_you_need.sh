@@ -1,7 +1,6 @@
-python main.py --api_key "your_api_key"\
-	--hf_token "your_huggingface_read_key"\
+python main.py \
 	--character "Alice"\
-	--model_engine "gpt-4"\
+	--model_engine "gpt-35-turbo"\
 	--use_pretrained_discriminator \
 	--relevance_finetune_epoch 5\
 	--rag_top_k 5\

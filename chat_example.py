@@ -4,12 +4,13 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from prp_model import retrieval_augmented_generate
 from classifier import get_relevance_discriminator
+import gradio as gr
 
-character = "Komeiji Koishi"
+character = "Alice"
 
 statements = [data["statement"] for data in json.load(open(f"statement/{character}.json"))]
 
-model_id = f"prp_models/gemma-1.1-7b-it-lora-{character}-rag-dpo"
+model_id = f"prp_models/llama-3-7b-it-lora-{character}-rag-dpo"
 
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -24,10 +25,11 @@ relevance_discriminator = get_relevance_discriminator(character=None, statement_
 
 print(f"You are chatting with {character}!")
 
-with torch.no_grad():
-    
-    while True:
-    
-        _, response = retrieval_augmented_generate(character, statements, input('User: '), prp_model, prp_tokenizer, relevance_discriminator, rag_top_k=5)
-        response = character+": "+response.replace("<eos>", "")
-        print(response)
+def chat_interface(user_input):
+    with torch.no_grad():
+        _, response = retrieval_augmented_generate(character, statements, user_input, prp_model, prp_tokenizer, relevance_discriminator, rag_top_k=5)
+        response = character + ": " + response.replace("<eos>", "")
+        return response
+
+iface = gr.Interface(fn=chat_interface, inputs="text", outputs="text", title=model_id)
+iface.launch(share=True)

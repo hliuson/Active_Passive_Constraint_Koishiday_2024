@@ -20,11 +20,10 @@ args = parser.parse_args()
 
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = args.device
+#os.environ["CUDA_VISIBLE_DEVICES"] = args.device
 os.environ["WANDB_DISABLED"] = "true"
-os.environ["HF_TOKEN"] = args.hf_token
 
-import openai
+from openai import AzureOpenAI
 import json
 import re
 import os
@@ -49,7 +48,9 @@ from prp_model import load_generator, generate_rag_dpo_dataset, train_prp
 if not os.path.exists("statement"):
     os.makedirs("statement")
 
-api_key = args.api_key
+
+#check gpu
+
 character = args.character
 model_engine = args.model_engine
 use_pretrained_discriminator = args.use_pretrained_discriminator
@@ -61,16 +62,18 @@ lora_rank = args.lora_rank
 prp_dpo_epoch = args.prp_dpo_epoch
 prp_scale = args.prp_scale
 
-openai.api_key = api_key
+client = AzureOpenAI(api_key=os.environ.get("OPENAI_API_KEY"),
+                     azure_endpoint=os.environ.get("OPENAI_API_BASE"),
+                     api_version=os.environ.get("OPENAI_API_VERSION"))
 
 # Stage 1: Dataset Synthesis
 
-persona_statement_dataset = convert_to_statement(character, model_engine)
-relevant_query_dataset = build_relevant_query_dataset(character, persona_statement_dataset, model_engine)
+persona_statement_dataset = convert_to_statement(character, model_engine, client)
+relevant_query_dataset = build_relevant_query_dataset(character, persona_statement_dataset, model_engine, client)
 if not use_pretrained_discriminator:
-    statement_query_relevance_dataset = build_statement_query_relevance_dataset(character, relevant_query_dataset, model_engine)
-    statement_to_response_nli_dataset = build_statement_to_response_nli_dataset(character, relevant_query_dataset, model_engine)
-    statement_to_response_nli_v2_dataset = discriminate_statement_to_response_nli_dataset(character, statement_to_response_nli_dataset, model_engine)
+    statement_query_relevance_dataset = build_statement_query_relevance_dataset(character, relevant_query_dataset, model_engine, client)
+    statement_to_response_nli_dataset = build_statement_to_response_nli_dataset(character, relevant_query_dataset, model_engine, client)
+    statement_to_response_nli_v2_dataset = discriminate_statement_to_response_nli_dataset(character, statement_to_response_nli_dataset, model_engine, client)
 else:
     statement_query_relevance_dataset = None
     statement_to_response_nli_dataset = None

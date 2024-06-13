@@ -13,7 +13,7 @@ def fill_in_convert_to_statement_template(character, passage):
 
 Please generate some important persona statements about "{character}" for a role-playing AI to follow. Each statement should be formalized as a sentence that exactly contains "{character}" and avoids coreference.'''
 
-def convert_to_statement(character, model_engine):
+def convert_to_statement(character, model_engine, client):
     
     if os.path.exists(f"statement/{character}.json"):
         return json.load(open(f"statement/{character}.json"))
@@ -42,19 +42,20 @@ def convert_to_statement(character, model_engine):
 
     for passage in bar:
         try:
-            statements = openai.ChatCompletion.create(
+            statements = client.chat.completions.create(
             model=model_engine,
             temperature=0.0,
             messages=icl+[
                 {"role": "user", "content": fill_in_convert_to_statement_template(character, passage)},
             ],
-            ).choices[0]['message']["content"]
+            ).choices[0].message.content
 
             for statement in statements.split("\n"):
                 if statement.startswith("- "):
                     dataset.append({"character": character, "passage": passage, "statement": statement[2:]})
             bar.set_description(f"Converting the Document to Persona Statements... Number of Statements: {len(dataset)}")
-        except:
+        except Exception as e:
+            print("Request Error:", e)
             pass
         
     json.dump(dataset, open(f"statement/{character}.json", "w"))
@@ -65,11 +66,11 @@ def fill_in_relevant_query_generation_template(character, statement):
     
     return f'''Persona Statement: {statement}
 
-What utterance from the human user to an AI character role-playing as {character} has to be responded by including the information in the persona statement above?
+What query to {character} must be responded by including the information in the given persona statement?
 
 Provide 3 diverse and concise possible utterances which view the AI as {character} and do not include the name inside the utterance.'''
 
-def build_relevant_query_dataset(character, persona_statement_dataset, model_engine):
+def build_relevant_query_dataset(character, persona_statement_dataset, model_engine, client):
     
     if os.path.exists(f"statement/{character}.query_relevant_to_statement.json"):
         return json.load(open(f"statement/{character}.query_relevant_to_statement.json"))
@@ -88,14 +89,14 @@ def build_relevant_query_dataset(character, persona_statement_dataset, model_eng
         
             statement = data["statement"]
 
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
             model=model_engine,
             temperature=1.0,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": fill_in_relevant_query_generation_template(character, statement)},
             ],
-            ).choices[0]['message']["content"]
+            ).choices[0].message.content
 
             queries = re.findall(r"\"(.*)?\"", response)
 
@@ -107,7 +108,8 @@ def build_relevant_query_dataset(character, persona_statement_dataset, model_eng
 
             bar.set_description(f"Generating Relevant Queries... Number of Queries: {n_query}")
             
-        except:
+        except Exception as e:
+            print("Request Error:", e)
             pass
         
     json.dump(dataset, open(f"statement/{character}.query_relevant_to_statement.json", "w"))
@@ -123,7 +125,7 @@ User Utterance: {query}
 
 Does this user utterance should be responded by including the information in the given persona statement? Only answer "yes" or "no" without any explanation.'''
 
-def build_statement_query_relevance_dataset(character, relevant_query_dataset, model_engine):
+def build_statement_query_relevance_dataset(character, relevant_query_dataset, model_engine, client):
     
     if os.path.exists(f"statement/{character}.relevance.json"):
         return json.load(open(f"statement/{character}.relevance.json"))
@@ -148,14 +150,14 @@ def build_statement_query_relevance_dataset(character, relevant_query_dataset, m
                 query = np.random.choice(_data["queries"])
                 prompt = fill_in_query_discrimination_template(character, statement, query)
 
-                relevant = openai.ChatCompletion.create(
+                relevant = client.chat.completions.create(
                 model=model_engine,
                 temperature=0.0,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt},
                 ],
-                ).choices[0]['message']["content"].lower()
+                ).choices[0].message.content.lower()
 
                 if relevant in ["no", "yes"]:
 
@@ -163,7 +165,8 @@ def build_statement_query_relevance_dataset(character, relevant_query_dataset, m
 
                     new_dataset.append(new_data)
                     
-            except:
+            except Exception as e:
+                print("Request Error:", e)
                 pass
                 
         bar.set_description(f"Discriminating Queries... Number of Queries: {len(new_dataset)}")
@@ -190,7 +193,7 @@ User Utterance: {query}
 
 ''' + '''5. Formalize the reponses as a Python Dictionary: {"entailed": "...", "neutral": "...", "contradicted": "..."}'''
 
-def build_statement_to_response_nli_dataset(character, relevant_query_dataset, model_engine):
+def build_statement_to_response_nli_dataset(character, relevant_query_dataset, model_engine, client):
     
     if os.path.exists(f"statement/{character}.nli.json"):
         return json.load(open(f"statement/{character}.nli.json"))
@@ -214,14 +217,14 @@ def build_statement_to_response_nli_dataset(character, relevant_query_dataset, m
 
                 prompt = fill_in_nli_generation_template(character, statement, query)
 
-                response = openai.ChatCompletion.create(
+                response = client.chat.completions.create(
                 model=model_engine,
                 temperature=1.0,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt},
                 ],
-                ).choices[0]['message']["content"]
+                ).choices[0].message.content
 
                 nli = json.loads(re.findall(r"({.*?})", response.replace("\n", ""))[0])
                 nli = {key.lower():nli[key] for key in nli if key.lower() in ["entailed", "neutral", "contradicted"]}
@@ -234,7 +237,8 @@ def build_statement_to_response_nli_dataset(character, relevant_query_dataset, m
 
                 bar.set_description(f"Generating NLI Data... Number of NLI Data: {n_nli}")
             
-            except:
+            except Exception as e:
+                print("Request Error:", e)
                 pass
             
     json.dump(new_dataset, open(f"statement/{character}.nli.json", "w"))
@@ -274,7 +278,7 @@ For this response, is the given persona entailed, neutral, or contradict to it i
 
 
 
-def discriminate_statement_to_response_nli_dataset(character, statement_to_response_nli_dataset, model_engine):
+def discriminate_statement_to_response_nli_dataset(character, statement_to_response_nli_dataset, model_engine, client):
     
     if os.path.exists(f"statement/{character}.nli.v2.json"):
         return json.load(open(f"statement/{character}.nli.v2.json"))
@@ -294,19 +298,20 @@ def discriminate_statement_to_response_nli_dataset(character, statement_to_respo
                 responses = data["nli"]
                 response = responses[label.lower()]
                 prompt = fill_in_nli_discrimination_template(character, statement, query, response)
-                new_label = openai.ChatCompletion.create(
+                new_label = client.chat.completions.create(
                     model=model_engine,
                     temperature=0.0,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt},
                     ],
-                    ).choices[0]['message']["content"].lower()
+                    ).choices[0].message.content.lower()
 
                 new_data = {"character": character, "statement": statement, "query": query, "response": response, "label": new_label}
 
                 new_dataset.append(new_data)
-            except:
+            except Exception as e:
+                print("Request Error:", e)
                 pass
 
         _dataset = np.random.choice([_data for _data in dataset if _data != data], min(len(dataset)-1, 3), replace=False)
@@ -317,20 +322,21 @@ def discriminate_statement_to_response_nli_dataset(character, statement_to_respo
                 responses = _data["nli"]
                 _response = responses[np.random.choice(["contradicted", "neutral", "entailed"])]
                 prompt = fill_in_nli_discrimination_template(character, statement, _query, _response)
-                new_label = openai.ChatCompletion.create(
+                new_label = client.chat.completions.create(
                     model=model_engine,
                     temperature=0.0,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt},
                     ],
-                    ).choices[0]['message']["content"].lower()
+                    ).choices[0].message.content.lower()
 
                 new_data = {"character": character, "statement": statement, "query": _query, "response": _response, "label": new_label}
 
                 new_dataset.append(new_data)
                 
-            except:
+            except Exception as e:
+                print("Request Error:", e)
                 pass
 
         bar.set_description(f"Generating NLI V2 Data... Number of NLI Data: {len(new_dataset)}")
